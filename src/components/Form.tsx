@@ -476,7 +476,7 @@ const FormContainer = () => {
               </a>{" "}
             </span>
           </label>
-          <div style={{ marginTop: 4 }}>
+          <div className="mt-1">
             {errors.terms && (
               <p className="mt-1 text-xs text-red-500">{errors.terms}</p>
             )}
@@ -823,7 +823,7 @@ const FormContainer = () => {
                     </a>{" "}
                   </span>
                 </label>
-                <div style={{ marginTop: 4 }}>
+                <div className="mt-1">
                   {errors.terms && (
                     <p className="mt-1 text-xs text-red-500">{errors.terms}</p>
                   )}
