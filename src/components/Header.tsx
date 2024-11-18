@@ -3,7 +3,7 @@ const Header = () => {
     <header>
       <div
         className="mx-auto border-b flex max-w-6xl items-center justify-between p-4"
-        aria-label="Global"
+        aria-label="header"
       >
         <div className="flex lg:flex-1">
           <a href="#" className="-m-1.5 p-1.5">

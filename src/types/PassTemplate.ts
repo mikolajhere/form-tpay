@@ -1,6 +1,7 @@
 import { Service } from "./Service";
 
 export interface PassTemplate {
+  type: string;
   id: string;
   name: string;
   price: number;

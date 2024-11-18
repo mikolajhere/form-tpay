@@ -1,13 +1,16 @@
 export interface FormData {
   email: string;
   phone: string;
-  fullName: string;
+  name: string;
+  surname: string;
+  shippingFlatNumber: string;
+  shippingStreetNumber: string;
   shippingStreet: string;
   shippingCity: string;
   shippingPostal: string;
-  billingStreet: string;
-  billingCity: string;
-  billingPostal: string;
+  giftRecipientName: string;
   companyName: string;
   nip: string;
+  [key: string]: string;
+  voucherValue: string;
 }

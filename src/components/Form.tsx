@@ -1,83 +1,111 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FormData } from "../types/FormData";
 import { PassTemplate } from "../types/PassTemplate";
-import ReCAPTCHA from "react-google-recaptcha";
+import { formValidationRules } from "../hooks/formValidationRules";
+import { validateField } from "../hooks/validateField";
+import { formatTemplateTitle } from "../hooks/formatTemplateTitle";
+import { renderTitle } from "../hooks/renderTitle";
+import { toast } from "sonner";
+import { ThankYouPage } from "./ThankYouPage";
+import { FinalizationData } from "../hooks/finalizationData";
 
 const FormContainer = () => {
   const [formData, setFormData] = useState<FormData>({
     email: "",
     phone: "",
-    fullName: "",
+    name: "",
+    surname: "",
+    giftRecipientName: "",
     shippingStreet: "",
+    shippingFlatNumber: "",
+    shippingStreetNumber: "",
     shippingCity: "",
     shippingPostal: "",
-    billingStreet: "",
-    billingCity: "",
-    billingPostal: "",
     companyName: "",
     nip: "",
+    voucherValue: "",
   });
   const [paymentMethod, setPaymentMethod] = useState("");
   const [isGift, setIsGift] = useState(false);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [needsVAT, setNeedsVAT] = useState(false);
-  const [giftRecipientName, setGiftRecipientName] = useState("");
   const [formStep, setFormStep] = useState(1);
-  const [pageType, setPageType] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<PassTemplate | null>(
     null,
   );
-  const [billingAddressSameAsDelivery, setBillingAddressSameAsDelivery] =
-    useState(true);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmiting, setIsSubmiting] = useState(false);
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showPaymentScreen, setShowPaymentScreen] = useState(false);
 
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const recaptchaRef = useRef<ReCAPTCHA>(null);
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [voucherValue, setVoucherValue] = useState("");
+  const [pageType, setPageType] = useState("");
 
   useEffect(() => {
     const url = new URL(window.location.href);
     const type = url.searchParams.get("type");
-    const cardId = url.searchParams.get("cardID");
-    const serviceId = url.searchParams.get("serviceID"); // Add this line to get serviceID
 
     if (type === "card-pass") {
       setPageType("card-pass");
+      const cardId = url.searchParams.get("cardID");
+      const serviceId = url.searchParams.get("serviceID");
       if (cardId) {
-        fetchTemplate(cardId, serviceId); // Pass serviceId to fetchTemplate
+        fetchTemplate(cardId, serviceId);
       }
-    } else if (url.pathname.includes("voucher")) {
+    } else if (type === "voucher") {
       setPageType("voucher");
     }
   }, []);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >,
+  ) => {
     const { id, value } = e.target;
+
+    // Update form data
     setFormData((prev) => ({
       ...prev,
       [id]: value,
     }));
 
-    // Clear email error when typing
-    if (id === "email") {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.email;
-        return newErrors;
-      });
-    }
+    // Validate field on change
+    const error = validateField(id, value);
+
+    setErrors((prev) => ({
+      ...prev,
+      [id]: error || "",
+    }));
   };
 
   const validateStep1 = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!formData.email) {
-      newErrors.email = "Email jest wymagany";
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Nieprawidłowy format email";
-    }
+    // Validate required fields
+    const step1Fields = ["email", "name", "surname"];
+    step1Fields.forEach((field) => {
+      const error = validateField(field, formData[field]);
+      if (error) {
+        newErrors[field] = error;
+      }
+    });
 
+    // Additional custom validations
     if (!acceptedTerms) {
       newErrors.terms = "Musisz zaakceptować regulamin i politykę prywatności";
+    }
+
+    if (isGift) {
+      const giftError = validateField(
+        "giftRecipientName",
+        formData.giftRecipientName,
+      );
+      if (giftError) {
+        newErrors.giftRecipientName = giftError;
+      }
     }
 
     setErrors(newErrors);
@@ -87,38 +115,36 @@ const FormContainer = () => {
   const validateStep2 = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!formData.shippingStreet) {
-      newErrors.shippingStreet = "Pole wymagane";
-    }
+    const shippingFields = [
+      "shippingStreet",
+      "shippingStreetNumber",
+      "shippingFlatNumber",
+      "shippingCity",
+      "shippingPostal",
+    ];
 
-    if (!formData.shippingCity) {
-      newErrors.shippingCity = "Pole wymagane";
-    }
-
-    if (!formData.shippingPostal) {
-      newErrors.shippingPostal = "Pole wymagane";
-    }
-
-    if (!billingAddressSameAsDelivery) {
-      if (!formData.billingStreet) {
-        newErrors.billingStreet = "Pole wymagane";
+    shippingFields.forEach((field) => {
+      const error = validateField(field, formData[field]);
+      if (error) {
+        newErrors[field] = error;
       }
-      if (!formData.billingCity) {
-        newErrors.billingCity = "Pole wymagane";
-      }
-      if (!formData.billingPostal) {
-        newErrors.billingPostal = "Pole wymagane";
-      }
-    }
+    });
 
+    // Validate company info if VAT invoice is needed
     if (needsVAT) {
+      const companyError = validateField("companyName", formData.companyName);
+      const nipError = validateField("nip", formData.nip);
+
       if (!formData.companyName) {
-        newErrors.companyName = "Pole wymagane";
+        newErrors.companyName = "Nazwa firmy jest wymagana";
+      } else if (companyError) {
+        newErrors.companyName = companyError;
       }
+
       if (!formData.nip) {
-        newErrors.nip = "Pole wymagane";
-      } else if (!/^\d{10}$/.test(formData.nip)) {
-        newErrors.nip = "NIP musi zawierać 10 cyfr";
+        newErrors.nip = "NIP jest wymagany";
+      } else if (nipError) {
+        newErrors.nip = nipError;
       }
     }
 
@@ -127,83 +153,98 @@ const FormContainer = () => {
     }
 
     setErrors(newErrors);
-
-    // Remove errors when fields are filled
-    if (formData.shippingStreet) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.shippingStreet;
-        return newErrors;
-      });
-    }
-
-    if (formData.shippingCity) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.shippingCity;
-        return newErrors;
-      });
-    }
-
-    if (formData.shippingPostal) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.shippingPostal;
-        return newErrors;
-      });
-    }
-
-    if (!billingAddressSameAsDelivery) {
-      if (formData.billingStreet) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.billingStreet;
-          return newErrors;
-        });
-      }
-      if (formData.billingCity) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.billingCity;
-          return newErrors;
-        });
-      }
-      if (formData.billingPostal) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.billingPostal;
-          return newErrors;
-        });
-      }
-    }
-
-    if (needsVAT) {
-      if (formData.companyName) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.companyName;
-          return newErrors;
-        });
-      }
-      if (formData.nip && /^\d{10}$/.test(formData.nip)) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors.nip;
-          return newErrors;
-        });
-      }
-    }
-
-    if (paymentMethod) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.payment;
-        return newErrors;
-      });
-    }
-
     return Object.keys(newErrors).length === 0;
   };
+
+  const renderInputField = (
+    id: string,
+    label: string,
+    required: boolean = false,
+    type: string = "text",
+    options?: { label: string; value: string }[], // For select inputs
+    multiline: boolean = false, // For textarea inputs
+    setCustomValue?: (value: string) => void, // Optional custom setter
+  ) => (
+    <div className="mb-4">
+      <label className="mb-1.5 inline-block text-sm" htmlFor={id}>
+        {label} {required && "*"}
+      </label>
+      {type === "select" && options ? (
+        <select
+          className={`w-full border ${
+            errors[id] ? "border-red-500" : "border-gray-200"
+          } px-4 py-3 text-sm`}
+          id={id}
+          value={formData[id]}
+          onChange={(e) => {
+            handleInputChange(e);
+            if (setCustomValue) {
+              setCustomValue(e.target.value);
+            }
+          }}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : multiline ? (
+        <textarea
+          className={`w-full border ${
+            errors[id] ? "border-red-500" : "border-gray-200"
+          } px-4 py-3 text-sm`}
+          id={id}
+          value={formData[id]}
+          onChange={(e) => {
+            handleInputChange(e);
+            if (setCustomValue) {
+              setCustomValue(e.target.value);
+            }
+          }}
+          rows={4}
+          maxLength={formValidationRules.find((r) => r.field === id)?.maxLength}
+        />
+      ) : (
+        <input
+          className={`w-full border ${
+            errors[id] ? "border-red-500" : "border-gray-200"
+          } px-4 py-3 text-sm`}
+          id={id}
+          type={type}
+          value={formData[id]}
+          onChange={(e) => {
+            handleInputChange(e);
+
+            // Additional validation for number fields
+            if (type === "number" && id === "voucherValue") {
+              const value = parseFloat(e.target.value);
+              if (setVoucherValue) {
+                setVoucherValue(e.target.value);
+              }
+
+              if (value < 100 || value > 5000) {
+                setErrors((prev) => ({
+                  ...prev,
+                  [id]: "Kwota musi być pomiędzy 100 a 5000",
+                }));
+              } else {
+                setErrors((prev) => {
+                  const newErrors = { ...prev };
+                  delete newErrors[id];
+                  return newErrors;
+                });
+              }
+            }
+          }}
+          maxLength={formValidationRules.find((r) => r.field === id)?.maxLength}
+          min={type === "number" && id === "voucherValue" ? 100 : undefined}
+          max={type === "number" && id === "voucherValue" ? 5000 : undefined}
+        />
+      )}
+      {errors[id] && <p className="mt-1 text-xs text-red-500">{errors[id]}</p>}
+    </div>
+  );
 
   const handleTermsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAcceptedTerms(e.target.checked);
@@ -263,25 +304,6 @@ const FormContainer = () => {
     }
   };
 
-  const renderTitle = () => {
-    if (pageType === "voucher") return "Kupujesz voucher";
-    if (pageType === "card-pass") return "Kupujesz karnet";
-    return "Zakup";
-  };
-
-  const formatTemplateTitle = (template: PassTemplate) => {
-    if (template.services?.length > 0) {
-      const service = template.services[0];
-      const variantName = service.variant ? ` (${service.variant.name})` : "";
-      return `Kupujesz karnet ${template.name}, ${service.units}x ${
-        service.service.name
-      }${variantName}, ${template.price
-        .toFixed(2)
-        .replace(".", ",")} zł, ważność ${template.validityDays} dni`;
-    }
-    return renderTitle();
-  };
-
   const PaymentOption = ({
     method,
     label,
@@ -337,7 +359,7 @@ const FormContainer = () => {
         {selectedTemplate ? (
           <div>
             <h1 className="mb-4 hidden text-2xl font-bold md:block">
-              {renderTitle()} {selectedTemplate.name}
+              {renderTitle()} karnet {selectedTemplate.name}
             </h1>
 
             <div className="hidden grid-cols-1 text-sm/6 sm:grid sm:grid-cols-[min(50%,theme(spacing.80))_auto]">
@@ -408,75 +430,31 @@ const FormContainer = () => {
           </div>
         )}
       </div>
-      <div className="order-2 h-fit border border-gray-100 bg-gray-100 px-4 py-6 md:order-2 lg:min-w-[494px]">
+      <div className="order-2 h-fit border border-gray-100 bg-gray-100 px-4 py-6 md:order-2 lg:min-w-[526px]">
         <div>
           <h3 className="pb-4 text-base font-semibold">Dane kontaktowe</h3>
-          <div className="mb-4">
-            <label className="mb-1.5 inline-block text-sm" htmlFor="fullname">
-              Imię i nazwisko
-            </label>
-            <input
-              className="w-full border border-gray-200 px-4 py-3 text-sm"
-              id="fullname"
-              type="text"
-            />
-          </div>
-          <div className="mb-4">
-            <label className="mb-1.5 inline-block text-sm" htmlFor="email">
-              Adres e-mail *
-            </label>
-            <input
-              className={`w-full border ${
-                errors.email ? "border-red-500" : "border-gray-200"
-              } px-4 py-3 text-sm`}
-              id="email"
-              type="email"
-              value={formData.email}
-              onChange={handleInputChange}
-            />
-            {errors.email && (
-              <p className="mt-1 text-xs text-red-500">{errors.email}</p>
-            )}
-          </div>
-          <div className="mb-4">
-            <label className="mb-1.5 inline-block text-sm" htmlFor="phone">
-              Numer telefonu
-            </label>
-            <input
-              className="w-full border border-gray-200 px-4 py-3 text-sm"
-              id="phone"
-              type="tel"
-            />
-          </div>
-        </div>
+          {renderInputField("name", "Imię", true)}
+          {renderInputField("surname", "Nazwisko", true)}
+          {renderInputField("email", "Adres e-mail", true, "email")}
+          {renderInputField("phone", "Numer telefonu", true, "tel")}
 
-        <div className="mb-4">
-          <label className="mb-4 flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={isGift}
-              onChange={(e) => setIsGift(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span className="text-sm">Czy to prezent?</span>
-          </label>
-          {isGift && (
-            <div className="mb-4">
-              <label
-                className="mb-1.5 inline-block text-sm"
-                htmlFor="gift-recipient-name"
-              >
-                Imię i nazwisko osoby obdarowanej
-              </label>
+          <div className="mb-4">
+            <label className="mb-4 flex items-center gap-2">
               <input
-                className="w-full border border-gray-200 px-4 py-3 text-sm"
-                type="text"
-                id="gift-recipient-name"
-                value={giftRecipientName}
-                onChange={(e) => setGiftRecipientName(e.target.value)}
+                type="checkbox"
+                checked={isGift}
+                onChange={(e) => setIsGift(e.target.checked)}
+                className="h-4 w-4"
               />
-            </div>
-          )}
+              <span className="text-sm">Czy to prezent?</span>
+            </label>
+          </div>
+          {isGift &&
+            renderInputField(
+              "giftRecipientName",
+              "Imię i nazwisko osoby obdarowanej",
+              true,
+            )}
         </div>
 
         <div className="space-y-4">
@@ -522,166 +500,13 @@ const FormContainer = () => {
       <div className="flex-1">
         <div className="h-fit border border-gray-200 px-4 py-6">
           <h6 className="mb-4 text-center text-lg font-semibold">
-            Adres do wysyłki
+            Adres nabywcy
           </h6>
-          <div className="mb-4">
-            <label
-              className="mb-1.5 inline-block text-sm"
-              htmlFor="shipping-street"
-            >
-              Ulica i numer domu *
-            </label>
-            <input
-              className={`w-full border ${
-                errors.shippingStreet ? "border-red-500" : "border-gray-200"
-              } px-4 py-3 text-sm`}
-              id="shippingStreet"
-              type="text"
-              value={formData.shippingStreet}
-              onChange={handleInputChange}
-            />
-            {errors.shippingStreet && (
-              <p className="mt-1 text-xs text-red-500">
-                {errors.shippingStreet}
-              </p>
-            )}
-          </div>
-
-          <div className="mb-4">
-            <label
-              className="mb-1.5 inline-block text-sm"
-              htmlFor="shippingCity"
-            >
-              Miasto *
-            </label>
-            <input
-              className={`w-full border ${
-                errors.shippingCity ? "border-red-500" : "border-gray-200"
-              } px-4 py-3 text-sm`}
-              id="shippingCity"
-              type="text"
-              value={formData.shippingCity}
-              onChange={handleInputChange}
-            />
-            {errors.shippingCity && (
-              <p className="mt-1 text-xs text-red-500">{errors.shippingCity}</p>
-            )}
-          </div>
-
-          <div className="mb-4">
-            <label
-              className="mb-1.5 inline-block text-sm"
-              htmlFor="shippingPostal"
-            >
-              Kod pocztowy *
-            </label>
-            <input
-              className={`w-full border ${
-                errors.shippingPostal ? "border-red-500" : "border-gray-200"
-              } px-4 py-3 text-sm`}
-              id="shippingPostal"
-              type="text"
-              value={formData.shippingPostal}
-              onChange={handleInputChange}
-            />
-            {errors.shippingPostal && (
-              <p className="mt-1 text-xs text-red-500">
-                {errors.shippingPostal}
-              </p>
-            )}
-          </div>
-
-          <div className="mb-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={billingAddressSameAsDelivery}
-                onChange={(e) =>
-                  setBillingAddressSameAsDelivery(e.target.checked)
-                }
-                className="h-4 w-4"
-              />
-              <span className="text-sm">
-                Adres rozliczeniowy taki sam jak adres dostawy
-              </span>
-            </label>
-          </div>
-
-          {!billingAddressSameAsDelivery && (
-            <div className="mt-4 border-t border-gray-200 pt-4">
-              <h6 className="mb-4 text-center text-lg font-semibold">
-                Adres rozliczeniowy
-              </h6>
-              <div className="mb-4">
-                <label
-                  className="mb-1.5 inline-block text-sm"
-                  htmlFor="billing-street"
-                >
-                  Ulica i numer domu *
-                </label>
-                <input
-                  className={`w-full border ${
-                    errors.billingStreet ? "border-red-500" : "border-gray-200"
-                  } px-4 py-3 text-sm`}
-                  id="billingStreet"
-                  type="text"
-                  value={formData.billingStreet}
-                  onChange={handleInputChange}
-                />
-                {errors.billingStreet && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.billingStreet}
-                  </p>
-                )}
-              </div>
-
-              <div className="mb-4">
-                <label
-                  className="mb-1.5 inline-block text-sm"
-                  htmlFor="billingCity"
-                >
-                  Miasto
-                </label>
-                <input
-                  className={`w-full border ${
-                    errors.billingCity ? "border-red-500" : "border-gray-200"
-                  } px-4 py-3 text-sm`}
-                  id="billingCity"
-                  type="text"
-                  value={formData.billingCity}
-                  onChange={handleInputChange}
-                />
-                {errors.billingCity && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.billingCity}
-                  </p>
-                )}
-              </div>
-
-              <div className="mb-4">
-                <label
-                  className="mb-1.5 inline-block text-sm"
-                  htmlFor="billingPostal"
-                >
-                  Kod pocztowy
-                </label>
-                <input
-                  className={`w-full border ${
-                    errors.billingPostal ? "border-red-500" : "border-gray-200"
-                  } px-4 py-3 text-sm`}
-                  id="billingPostal"
-                  type="text"
-                  value={formData.billingPostal}
-                  onChange={handleInputChange}
-                />
-                {errors.billingPostal && (
-                  <p className="mt-1 text-xs text-red-500">
-                    {errors.billingPostal}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+          {renderInputField("shippingStreet", "Ulica")}
+          {renderInputField("shippingStreetNumber", "Numer domu", true)}
+          {renderInputField("shippingFlatNumber", "Numer lokalu")}
+          {renderInputField("shippingCity", "Miejscowość", true)}
+          {renderInputField("shippingPostal", "Kod pocztowy")}
 
           <div className="mt-4 border-t border-gray-200 pt-4">
             <label className="flex items-center gap-2">
@@ -701,7 +526,7 @@ const FormContainer = () => {
                     className="mb-1.5 inline-block text-sm"
                     htmlFor="company-name"
                   >
-                    Nazwa firmy *
+                    Nazwa firmy
                   </label>
                   <input
                     className={`w-full border ${
@@ -720,7 +545,7 @@ const FormContainer = () => {
                 </div>
                 <div className="mb-4">
                   <label className="mb-1.5 inline-block text-sm" htmlFor="nip">
-                    NIP *
+                    NIP
                   </label>
                   <input
                     className={`w-full border ${
@@ -744,7 +569,7 @@ const FormContainer = () => {
       <div className="flex-1">
         <div className="border border-gray-200 px-4 py-6">
           <h3 className="pb-4 text-center text-lg font-semibold">
-            Rodzaj płatności
+            Metoda płatności
           </h3>
           <PaymentOption method="blik" label="Blik" imageSrc="blik.svg" />
           <PaymentOption method="tpay" label="Tpay" imageSrc="tpay_logo.svg" />
@@ -779,6 +604,13 @@ const FormContainer = () => {
           <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
             {selectedTemplate.price.toFixed(2)} zł
           </dd>
+
+          <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
+            Osoba obdarowana
+          </dt>
+          <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
+            {formData.giftRecipientName}
+          </dd>
           <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
             Ważność
           </dt>
@@ -811,113 +643,365 @@ const FormContainer = () => {
           </dd>
         </div>
       )}
-      <button
-        onClick={handleSubmitForm}
-        className="mt-6 w-full bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-      >
-        Potwierdź i zapłać
-      </button>
+
+      {pageType === "voucher" ? (
+        <>
+          <div className="mt-4 space-y-2">
+            <div className="grid grid-cols-1 text-sm/6 sm:grid-cols-[min(50%,theme(spacing.80))_auto]">
+              <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
+                Imię i nazwisko
+              </dt>
+              <dd className="sm:[&amp;:nth-child(2)]:border-none border-t-0 pb-3 pt-1 text-zinc-950 sm:border-zinc-950/5 sm:py-3">
+                {formData.name} {formData.surname}
+              </dd>
+              <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
+                Kwota
+              </dt>
+              <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
+                {voucherValue}
+              </dd>
+              <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
+                Osoba obdarowana
+              </dt>
+              <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
+                {formData.giftRecipientName}
+              </dd>
+              <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
+                Ważność
+              </dt>
+              <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
+                {new Date(
+                  new Date().getTime() + 90 * 24 * 60 * 60 * 1000,
+                ).toLocaleDateString()}
+              </dd>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div></div>
+      )}
+
+      {errors.submission && (
+        <p className="mt-2 text-sm text-red-500">{errors.submission}</p>
+      )}
+      {errors.finalization && (
+        <p className="mt-2 text-sm text-red-500">{errors.finalization}</p>
+      )}
+      {!transactionId ? (
+        <button
+          onClick={handleSubmitForm}
+          className="mt-6 flex w-full items-center justify-center gap-2 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+          disabled={isSubmiting}
+        >
+          {isSubmiting && <div className="loader"></div>}
+          {isSubmiting ? "Przetwarzanie..." : "Potwierdź i zapłać"}
+        </button>
+      ) : (
+        <button
+          onClick={handleFinalizeTransaction}
+          className="mt-6 flex w-full items-center justify-center gap-2 bg-green-800 px-7 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+          disabled={isSubmiting}
+        >
+          {isSubmiting && <div className="loader"></div>}
+          {isSubmiting ? "Przetwarzanie..." : "Finalizuj transakcję"}
+        </button>
+      )}
     </div>
   );
 
   const handleSubmitForm = async () => {
-    if (captchaToken) {
-      // Verify captcha token on your backend
-      try {
-        const response = await fetch("/api/verify-captcha", {
+    try {
+      setIsSubmiting(true);
+      const transactionData = {
+        email: formData.email,
+        phone: formData.phone,
+        firstName: formData.name,
+        lastName: formData.surname,
+      };
+
+      const response = await fetch(
+        "https://boscopanel.nxtm.pl/api/storefront/transaction/create",
+        {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ captchaToken }),
-        });
+          body: JSON.stringify(transactionData),
+        },
+      );
 
-        if (response.ok) {
-          // Process form submission
-          // ...
-        } else {
-          setErrors((prev) => ({
-            ...prev,
-            captcha: "Weryfikacja nie powiodła się. Spróbuj ponownie.",
-          }));
-          // Reset captcha
-          recaptchaRef.current?.reset();
-          setCaptchaToken(null);
-        }
-      } catch (error) {
-        console.error("Error verifying captcha:", error);
+      if (response.ok) {
+        const result = await response.json();
+        setTransactionId(result.id);
+        console.log("Transaction created successfully:", result);
+        setIsSubmiting(false);
+        toast.success(
+          'Transakcja została utworzona pomyślnie. Kliknij "Finalizuj transakcję", aby kontynuować.',
+        );
+      } else {
+        setIsSubmiting(false);
         setErrors((prev) => ({
           ...prev,
-          captcha: "Wystąpił błąd. Spróbuj ponownie później.",
+          captcha: "Weryfikacja nie powiodła się. Spróbuj ponownie.",
         }));
       }
+    } catch (error) {
+      console.error("Error verifying captcha:", error);
+      setIsSubmiting(false);
+      setErrors((prev) => ({
+        ...prev,
+        captcha: "Wystąpił błąd. Spróbuj ponownie później.",
+      }));
+    }
+  };
+
+  const handleFirstStepContent = () => {
+    if (pageType === "voucher") {
+      return (
+        <>
+          <h1 className="order-1 mb-4 block text-pretty text-xl font-semibold leading-7 text-gray-900 md:hidden">
+            Kupujesz voucher
+          </h1>
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:gap-16">
+            <div className="flex-1">
+              <h1 className="order-1 mb-4 hidden text-pretty text-xl font-semibold leading-7 text-gray-900 md:block">
+                Kupujesz voucher
+              </h1>
+              <div className="border border-gray-200 px-4 py-6">
+                <h3 className="mb-6 text-base font-semibold">
+                  Wartość vouchera
+                </h3>
+                {renderInputField("voucherValue", "Kwota (zł)", true, "number")}
+              </div>
+            </div>
+
+            <div className="order-2 h-fit border border-gray-100 bg-gray-100 px-4 py-6 md:order-2 lg:min-w-[526px]">
+              <div>
+                <h3 className="pb-4 text-base font-semibold">
+                  Dane kontaktowe
+                </h3>
+                {renderInputField("name", "Imię", true)}
+                {renderInputField("surname", "Nazwisko", true)}
+                {renderInputField("email", "Adres e-mail", true, "email")}
+                {renderInputField("phone", "Numer telefonu", true, "tel")}
+
+                <div className="mb-4">
+                  <label className="mb-4 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isGift}
+                      onChange={(e) => setIsGift(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm">Czy to prezent?</span>
+                  </label>
+                </div>
+                {isGift &&
+                  renderInputField(
+                    "giftRecipientName",
+                    "Imię i nazwisko osoby obdarowanej",
+                    true,
+                  )}
+              </div>
+
+              <div className="space-y-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="min-h-4 min-w-4"
+                    checked={acceptedTerms}
+                    onChange={handleTermsChange}
+                  />
+                  <span className="text-sm">
+                    Akceptuję{" "}
+                    <a href="#" className="font-bold underline">
+                      regulamin
+                    </a>{" "}
+                    i{" "}
+                    <a href="#" className="font-bold underline">
+                      politykę prywatności*
+                    </a>{" "}
+                  </span>
+                </label>
+                <div style={{ marginTop: 4 }}>
+                  {errors.terms && (
+                    <p className="mt-1 text-xs text-red-500">{errors.terms}</p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={handleNextStep}
+                className="mt-6 w-full bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+                disabled={!voucherValue || !formData.email || !acceptedTerms}
+              >
+                Dalej
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    }
+    return renderFirstStep();
+  };
+
+  const renderPaymentScreen = () => (
+    <div className="flex h-screen items-center justify-center">
+      <div className="max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-lg">
+        <h2 className="mb-6 text-2xl font-bold text-gray-800">
+          STRONA Z PŁATNOŚCIĄ
+        </h2>
+        <div className="mb-4 h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
+        <div className="mb-4 h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
+        <div className="h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
+        <button
+          onClick={() => setShowThankYou(true)}
+          className="mt-4 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+        >
+          Powrót
+        </button>
+      </div>
+    </div>
+  );
+
+  const handleFinalizeTransaction = async () => {
+    if (!transactionId) return;
+
+    try {
+      setIsSubmiting(true);
+      const finalizationData: FinalizationData = {
+        addressStreetName: formData.shippingStreet,
+        addressStreetNumber: formData.shippingStreetNumber,
+        addressFlatNumber: formData.shippingFlatNumber,
+        addressPostalCode: formData.shippingPostal,
+        addressCity: formData.shippingCity,
+        paymentType: paymentMethod,
+        isInvoice: needsVAT,
+        companyName: needsVAT ? formData.companyName : undefined,
+        companyNIP: needsVAT ? formData.nip : undefined,
+        isGift: isGift,
+        giftData: isGift ? formData.giftRecipientName : undefined,
+      };
+
+      if (pageType === "voucher") {
+        // Convert currency string "216,00 zł" to number 216.00
+        const numericValue = voucherValue
+          .replace(/[^\d,]/g, "") // Remove all non-digit characters except comma
+          .replace(",", "."); // Replace comma with decimal point
+        finalizationData.voucherValue = parseFloat(numericValue);
+      } else if (selectedTemplate) {
+        finalizationData.passId = selectedTemplate.id;
+      }
+
+      const response = await fetch(
+        `https://boscopanel.nxtm.pl/api/storefront/transaction/finalize/${transactionId}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(finalizationData),
+        },
+      );
+
+      if (response.ok) {
+        const { url } = await response.json();
+        window.location.href = url;
+        // setShowPaymentScreen(true);
+      } else {
+        const errorData = await response.json();
+        setIsSubmiting(false);
+        setErrors((prev) => ({
+          ...prev,
+          finalization:
+            errorData.detail || "Wystąpił błąd podczas finalizacji transakcji.",
+        }));
+      }
+    } catch (error) {
+      console.error("Error finalizing transaction:", error);
+      setIsSubmiting(false);
+      setErrors((prev) => ({
+        ...prev,
+        finalization: "Wystąpił błąd. Spróbuj ponownie później.",
+      }));
     }
   };
 
   return (
-    <section className="pb-16 pt-6 sm:pt-9">
+    <section className="pb-8 pt-6 sm:pt-9">
       <div className="mx-auto max-w-6xl px-4">
-        <nav aria-label="Proces" className="mb-8 hidden md:block">
-          <ol
-            role="list"
-            className="space-y-4 md:flex md:space-x-8 md:space-y-0"
-          >
-            <li className="md:flex-1">
-              <div
-                className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
-                  formStep >= 1 ? "border-yellow-600" : "border-gray-500"
-                }`}
+        {showThankYou ? (
+          <ThankYouPage
+            formData={formData}
+            selectedTemplate={selectedTemplate}
+            voucherValue={voucherValue}
+          />
+        ) : showPaymentScreen ? (
+          renderPaymentScreen()
+        ) : (
+          <div>
+            <nav aria-label="Proces" className="mb-8 hidden md:block">
+              <ol
+                role="list"
+                className="space-y-4 md:flex md:space-x-8 md:space-y-0"
               >
-                <span
-                  className={`text-sm font-medium ${
-                    formStep >= 1 ? "text-yellow-600" : "text-gray-500"
-                  }`}
-                >
-                  Krok 1
-                </span>
-                <span className="text-sm font-medium">Dane kontaktowe</span>
-              </div>
-            </li>
-            <li className="md:flex-1">
-              <div
-                className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
-                  formStep >= 2 ? "border-yellow-600" : "border-gray-300"
-                }`}
-              >
-                <span
-                  className={`text-sm font-medium ${
-                    formStep >= 2 ? "text-yellow-600" : "text-gray-500"
-                  } `}
-                >
-                  Krok 2
-                </span>
-                <span className="text-sm font-medium">
-                  Adres i rodzaj płatności
-                </span>
-              </div>
-            </li>
-            <li className="md:flex-1">
-              <div
-                className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
-                  formStep >= 3 ? "border-yellow-600" : "border-gray-300"
-                }`}
-              >
-                <span
-                  className={`text-sm font-medium ${
-                    formStep >= 3 ? "text-yellow-600" : "text-gray-500"
-                  } `}
-                >
-                  Krok 3
-                </span>
-                <span className="text-sm font-medium">Podsumowanie</span>
-              </div>
-            </li>
-          </ol>
-        </nav>
+                <li className="md:flex-1">
+                  <div
+                    className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
+                      formStep >= 1 ? "border-yellow-600" : "border-gray-500"
+                    }`}
+                  >
+                    <span
+                      className={`text-sm font-medium ${
+                        formStep >= 1 ? "text-yellow-600" : "text-gray-500"
+                      }`}
+                    >
+                      Krok 1
+                    </span>
+                    <span className="text-sm font-medium">Dane kontaktowe</span>
+                  </div>
+                </li>
+                <li className="md:flex-1">
+                  <div
+                    className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
+                      formStep >= 2 ? "border-yellow-600" : "border-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`text-sm font-medium ${
+                        formStep >= 2 ? "text-yellow-600" : "text-gray-500"
+                      } `}
+                    >
+                      Krok 2
+                    </span>
+                    <span className="text-sm font-medium">
+                      Adres i metoda płatności
+                    </span>
+                  </div>
+                </li>
+                <li className="md:flex-1">
+                  <div
+                    className={`flex flex-col border-l-4 py-2 pl-4 md:border-l-0 md:border-t-4 md:pb-0 md:pl-0 md:pt-4 ${
+                      formStep >= 3 ? "border-yellow-600" : "border-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`text-sm font-medium ${
+                        formStep >= 3 ? "text-yellow-600" : "text-gray-500"
+                      } `}
+                    >
+                      Krok 3
+                    </span>
+                    <span className="text-sm font-medium">Podsumowanie</span>
+                  </div>
+                </li>
+              </ol>
+            </nav>
 
-        {formStep === 1 && renderFirstStep()}
-        {formStep === 2 && renderBillingAddress()}
-        {formStep === 3 && renderSummary()}
+            {formStep === 1 && handleFirstStepContent()}
+            {formStep === 2 && renderBillingAddress()}
+            {formStep === 3 && renderSummary()}
+          </div>
+        )}
       </div>
     </section>
   );
