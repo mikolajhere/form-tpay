@@ -24,7 +24,7 @@ const FormContainer = () => {
   const [formStep, setFormStep] = useState(1);
   const [pageType, setPageType] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<PassTemplate | null>(
-    null
+    null,
   );
   const [billingAddressSameAsDelivery, setBillingAddressSameAsDelivery] =
     useState(true);
@@ -232,7 +232,7 @@ const FormContainer = () => {
   const fetchTemplate = async (id: string, serviceId?: string | null) => {
     try {
       const response = await fetch(
-        "https://boscopanel.nxtm.pl/api/pass-template/list"
+        "https://boscopanel.nxtm.pl/api/pass-template/list",
       );
       const templates: PassTemplate[] = await response.json();
       const template = templates.find((t) => t.id === id);
@@ -240,7 +240,7 @@ const FormContainer = () => {
         // If serviceId is provided, find the specific service
         if (serviceId) {
           const matchingService = template.services.find(
-            (service) => service.service.id === serviceId
+            (service) => service.service.id === serviceId,
           );
           if (matchingService) {
             setSelectedTemplate({
@@ -292,7 +292,7 @@ const FormContainer = () => {
     imageSrc: string;
   }) => (
     <div
-      className="w-full cursor-pointer mb-2"
+      className="mb-2 w-full cursor-pointer"
       onClick={() => handlePaymentMethodSelect(method)}
     >
       <div className="border border-gray-200 p-4 hover:border-gray-300">
@@ -329,18 +329,18 @@ const FormContainer = () => {
   const renderFirstStep = () => (
     <div className="flex flex-col justify-between gap-4 md:flex-row md:gap-16">
       {selectedTemplate && (
-        <h1 className="md:hidden text-pretty mb-2 text-base leading-7 font-semibold text-gray-900 order-1">
+        <h1 className="order-1 mb-2 text-pretty text-base font-semibold leading-7 text-gray-900 md:hidden">
           {formatTemplateTitle(selectedTemplate)}
         </h1>
       )}
-      <div className="flex-1 order-3 md:order-1">
+      <div className="order-3 flex-1 md:order-1">
         {selectedTemplate ? (
           <div>
-            <h1 className="hidden md:block mb-4 text-2xl font-bold">
+            <h1 className="mb-4 hidden text-2xl font-bold md:block">
               {renderTitle()} {selectedTemplate.name}
             </h1>
 
-            <div className="hidden sm:grid grid-cols-1   sm:grid-cols-[min(50%,theme(spacing.80))_auto] text-sm/6">
+            <div className="hidden grid-cols-1 text-sm/6 sm:grid sm:grid-cols-[min(50%,theme(spacing.80))_auto]">
               <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
                 Cena
               </dt>
@@ -368,7 +368,7 @@ const FormContainer = () => {
               </dt>
               <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
                 {selectedTemplate.services.every(
-                  (service) => !service.variant
+                  (service) => !service.variant,
                 ) ? (
                   <div>Brak wariantu</div>
                 ) : (
@@ -408,7 +408,7 @@ const FormContainer = () => {
           </div>
         )}
       </div>
-      <div className="h-fit order-2 md:order-2 border border-gray-100 bg-gray-100 px-4 py-6 lg:min-w-[450px]">
+      <div className="order-2 h-fit border border-gray-100 bg-gray-100 px-4 py-6 md:order-2 lg:min-w-[494px]">
         <div>
           <h3 className="pb-4 text-base font-semibold">Dane kontaktowe</h3>
           <div className="mb-4">
@@ -435,7 +435,7 @@ const FormContainer = () => {
               onChange={handleInputChange}
             />
             {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              <p className="mt-1 text-xs text-red-500">{errors.email}</p>
             )}
           </div>
           <div className="mb-4">
@@ -500,7 +500,7 @@ const FormContainer = () => {
           </label>
           <div style={{ marginTop: 4 }}>
             {errors.terms && (
-              <p className="text-red-500 text-xs mt-1">{errors.terms}</p>
+              <p className="mt-1 text-xs text-red-500">{errors.terms}</p>
             )}
           </div>
         </div>
@@ -518,9 +518,9 @@ const FormContainer = () => {
   );
 
   const renderBillingAddress = () => (
-    <div className="flex flex-col md:flex-row gap-4 md:gap-16">
+    <div className="flex flex-col gap-4 md:flex-row md:gap-16">
       <div className="flex-1">
-        <div className="border border-gray-200 px-4 py-6 h-fit">
+        <div className="h-fit border border-gray-200 px-4 py-6">
           <h6 className="mb-4 text-center text-lg font-semibold">
             Adres do wysyłki
           </h6>
@@ -541,7 +541,7 @@ const FormContainer = () => {
               onChange={handleInputChange}
             />
             {errors.shippingStreet && (
-              <p className="text-red-500 text-xs mt-1">
+              <p className="mt-1 text-xs text-red-500">
                 {errors.shippingStreet}
               </p>
             )}
@@ -564,7 +564,7 @@ const FormContainer = () => {
               onChange={handleInputChange}
             />
             {errors.shippingCity && (
-              <p className="text-red-500 text-xs mt-1">{errors.shippingCity}</p>
+              <p className="mt-1 text-xs text-red-500">{errors.shippingCity}</p>
             )}
           </div>
 
@@ -585,7 +585,7 @@ const FormContainer = () => {
               onChange={handleInputChange}
             />
             {errors.shippingPostal && (
-              <p className="text-red-500 text-xs mt-1">
+              <p className="mt-1 text-xs text-red-500">
                 {errors.shippingPostal}
               </p>
             )}
@@ -629,7 +629,7 @@ const FormContainer = () => {
                   onChange={handleInputChange}
                 />
                 {errors.billingStreet && (
-                  <p className="text-red-500 text-xs mt-1">
+                  <p className="mt-1 text-xs text-red-500">
                     {errors.billingStreet}
                   </p>
                 )}
@@ -652,7 +652,7 @@ const FormContainer = () => {
                   onChange={handleInputChange}
                 />
                 {errors.billingCity && (
-                  <p className="text-red-500 text-xs mt-1">
+                  <p className="mt-1 text-xs text-red-500">
                     {errors.billingCity}
                   </p>
                 )}
@@ -675,7 +675,7 @@ const FormContainer = () => {
                   onChange={handleInputChange}
                 />
                 {errors.billingPostal && (
-                  <p className="text-red-500 text-xs mt-1">
+                  <p className="mt-1 text-xs text-red-500">
                     {errors.billingPostal}
                   </p>
                 )}
@@ -713,7 +713,7 @@ const FormContainer = () => {
                     onChange={handleInputChange}
                   />
                   {errors.companyName && (
-                    <p className="text-red-500 text-xs mt-1">
+                    <p className="mt-1 text-xs text-red-500">
                       {errors.companyName}
                     </p>
                   )}
@@ -732,7 +732,7 @@ const FormContainer = () => {
                     onChange={handleInputChange}
                   />
                   {errors.nip && (
-                    <p className="text-red-500 text-xs mt-1">{errors.nip}</p>
+                    <p className="mt-1 text-xs text-red-500">{errors.nip}</p>
                   )}
                 </div>
               </div>
@@ -749,7 +749,7 @@ const FormContainer = () => {
           <PaymentOption method="blik" label="Blik" imageSrc="blik.svg" />
           <PaymentOption method="tpay" label="Tpay" imageSrc="tpay_logo.svg" />
           {errors.payment && (
-            <p className="text-red-500 text-xs mt-1">{errors.payment}</p>
+            <p className="mt-1 text-xs text-red-500">{errors.payment}</p>
           )}
           <button
             onClick={handleNextStep}
@@ -766,11 +766,11 @@ const FormContainer = () => {
     <div className="border border-gray-100 bg-gray-100 px-4 py-6">
       <h6 className="mb-4 text-xl font-semibold">Podsumowanie zamówienia</h6>
       {selectedTemplate && (
-        <div className=" grid grid-cols-1   sm:grid-cols-[min(50%,theme(spacing.80))_auto] text-sm/6">
+        <div className="grid grid-cols-1 text-sm/6 sm:grid-cols-[min(50%,theme(spacing.80))_auto]">
           <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
             Nazwa
           </dt>
-          <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950  sm:border-zinc-950/5 border-t-0 sm:py-3">
+          <dd className="sm:[&amp;:nth-child(2)]:border-none border-t-0 pb-3 pt-1 text-zinc-950 sm:border-zinc-950/5 sm:py-3">
             {selectedTemplate.name}
           </dd>
           <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
@@ -855,7 +855,7 @@ const FormContainer = () => {
   };
 
   return (
-    <section className="pb-16 sm:pt-9 pt-6">
+    <section className="pb-16 pt-6 sm:pt-9">
       <div className="mx-auto max-w-6xl px-4">
         <nav aria-label="Proces" className="mb-8 hidden md:block">
           <ol
