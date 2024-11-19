@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { FormData } from "../types/FormData";
 import { PassTemplate } from "../types/PassTemplate";
 import { formValidationRules } from "../hooks/formValidationRules";
 import { validateField } from "../hooks/validateField";
 import { formatTemplateTitle } from "../hooks/formatTemplateTitle";
 import { renderTitle } from "../hooks/renderTitle";
-// import { toast } from "sonner";
-import { ThankYouPage } from "./ThankYouPage";
 import { FinalizationData } from "../hooks/finalizationData";
 import { toast } from "sonner";
+import { ErrorDetails } from "../hooks/errorDetails";
+import PaymentMethods from "../views/PaymentOptions";
+import { FormDataContainer } from "../types/FormData";
 
 const FormContainer = () => {
-  const [formData, setFormData] = useState<FormData>({
+  const [formData, setFormData] = useState<FormDataContainer>({
     email: "",
     phone: "",
     name: "",
@@ -37,18 +37,44 @@ const FormContainer = () => {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [isSubmiting, setIsSubmiting] = useState(false);
   const [transactionId, setTransactionId] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [showPaymentScreen, setShowPaymentScreen] = useState(false);
-
-  const [showThankYou, setShowThankYou] = useState(false);
   const [voucherValue, setVoucherValue] = useState("");
   const [pageType, setPageType] = useState("");
+  const [currentView, setCurrentView] = useState("form");
+  const [transactionDetails, setTransactionDetails] = useState<{
+    id: string;
+    amount: number;
+  } | null>(null);
+
+  const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    const path = url.pathname;
     const type = url.searchParams.get("type");
 
-    if (type === "card-pass") {
+    if (path === "/success") {
+      setCurrentView("success");
+      const transactionId = url.searchParams.get("transaction");
+
+      if (transactionId) {
+        fetch(
+          `https://boscopanel.nxtm.pl/api/storefront/transaction/status/${transactionId}`,
+        )
+          .then((response) => response.json())
+          .then((data) => setTransactionDetails(data))
+          .catch(() =>
+            toast.error("Błąd podczas pobierania szczegółów transakcji"),
+          );
+      }
+    } else if (path === "/error") {
+      setCurrentView("error");
+      const transactionId = url.searchParams.get("transaction");
+      const errorCode = url.searchParams.get("error");
+
+      if (transactionId && errorCode) {
+        setErrorDetails({ transactionId, errorCode });
+      }
+    } else if (type === "card-pass") {
       setPageType("card-pass");
       const cardId = url.searchParams.get("cardID");
       const serviceId = url.searchParams.get("serviceID");
@@ -67,31 +93,27 @@ const FormContainer = () => {
   ) => {
     const { id, value, type } = e.target;
 
-    // For number inputs, sanitize the input
     if (type === "number") {
-      const sanitizedValue = value.replace(/[^0-9.]/g, ""); // Remove all non-numeric characters except the decimal point
+      const sanitizedValue = value.replace(/[^0-9.]/g, "");
       setFormData((prev) => ({
         ...prev,
         [id]: sanitizedValue,
       }));
 
-      // Validate field on change
       const error = validateField(id, sanitizedValue);
       setErrors((prev) => ({
         ...prev,
         [id]: error || "",
       }));
 
-      return; // Exit early as we've already handled the sanitization
+      return;
     }
 
-    // For other inputs, process normally
     setFormData((prev) => ({
       ...prev,
       [id]: value,
     }));
 
-    // Validate field on change
     const error = validateField(id, value);
     setErrors((prev) => ({
       ...prev,
@@ -245,7 +267,7 @@ const FormContainer = () => {
               if (value < 100 || value > 5000) {
                 setErrors((prev) => ({
                   ...prev,
-                  [id]: "Kwota musi być pomiędzy 100 a 5000",
+                  [id]: "Kwota musi być pomiędzy 100 a 5000 zł",
                 }));
               } else {
                 setErrors((prev) => {
@@ -339,30 +361,34 @@ const FormContainer = () => {
   const fetchTemplate = async (id: string, serviceId?: string | null) => {
     try {
       const response = await fetch(
-        "https://boscopanel.nxtm.pl/api/pass-template/list",
+        `https://boscopanel.nxtm.pl/api/pass-template/show/${id}`,
       );
-      const templates: PassTemplate[] = await response.json();
-      const template = templates.find((t) => t.id === id);
-      if (template) {
-        // If serviceId is provided, find the specific service
-        if (serviceId) {
-          const matchingService = template.services.find(
-            (service) => service.service.id === serviceId,
-          );
-          if (matchingService) {
-            setSelectedTemplate({
-              ...template,
-              // Move the matching service to be first in the array
-              services: [
-                matchingService,
-                ...template.services.filter((s) => s.service.id !== serviceId),
-              ],
-            });
-          } else {
-            setSelectedTemplate(template);
-          }
-        } else {
-          setSelectedTemplate(template);
+      const template = await response.json();
+
+      if (template.id !== id) {
+        console.log("The pass ID has been updated to:", template.id);
+        setSelectedTemplate({ ...template, id: template.id });
+      } else {
+        setSelectedTemplate(template);
+      }
+
+      if (serviceId && template.services) {
+        const matchingService = template.services.find(
+          (service: { service: { id: string } }) =>
+            service.service.id === serviceId,
+        );
+
+        if (matchingService) {
+          setSelectedTemplate((prev) => ({
+            ...prev!,
+            services: [
+              matchingService,
+              ...template.services.filter(
+                (service: { service: { id: string } }) =>
+                  service.service.id !== serviceId,
+              ),
+            ],
+          }));
         }
       }
     } catch (error) {
@@ -370,45 +396,105 @@ const FormContainer = () => {
     }
   };
 
-  const PaymentOption = ({
-    method,
-    label,
-    imageSrc,
-  }: {
-    method: string;
-    label: string;
-    imageSrc: string;
-  }) => (
-    <div
-      className="mb-2 w-full cursor-pointer"
-      onClick={() => handlePaymentMethodSelect(method)}
-    >
-      <div className="border border-gray-200 p-4 hover:border-gray-300">
-        <div className="-m-2 flex flex-wrap items-center justify-between">
-          <div className="w-auto p-2">
-            <label className="relative flex items-center gap-2">
-              <input
-                className="custom-radio-1 absolute h-4 w-4 opacity-0"
-                type="radio"
-                name="payment-method"
-                checked={paymentMethod === method}
-                onChange={() => {}}
-              />
-              <span
-                className={`flex h-4 w-4 items-center justify-center rounded-full border border-gray-600 ${
-                  paymentMethod === method ? "border-blue-600 bg-blue-600" : ""
-                }`}
-              >
-                {paymentMethod === method && (
-                  <span className="h-2 w-2 rounded-full bg-white"></span>
-                )}
-              </span>
-              <span className="text-sm">{label}</span>
-            </label>
+  const renderSuccess = () => (
+    <div className="flex min-h-[80vh] items-center justify-center p-4">
+      <div className="w-full max-w-md border border-gray-200 bg-white p-8 text-center shadow-lg">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center text-green-600">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-8 w-8"
+            viewBox="0 0 24 24"
+          >
+            <g
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="m9 12l2 2l4-4" />
+            </g>
+          </svg>
+        </div>
+        <h2 className="mb-4 text-2xl font-bold text-gray-900">
+          Płatność zakończona sukcesem!
+        </h2>
+        <p className="mb-6 text-gray-600">
+          Dziękujemy za zakup. Szczegóły zamówienia zostały wysłane na podany
+          adres email.
+        </p>
+        {transactionDetails && (
+          <div className="mb-6 rounded-lg bg-gray-50 p-4 text-left">
+            <p className="mb-2 text-sm text-gray-600">
+              Numer zamówienia: {transactionDetails.id}
+            </p>
+            <p className="text-sm text-gray-600">
+              Kwota: {transactionDetails.amount} zł
+            </p>
           </div>
-          <div className="w-auto p-2">
-            <img src={imageSrc} alt="" className="h-4" />
+        )}
+        <a
+          href="/"
+          className="inline-block w-full bg-gray-900 px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+        >
+          Powrót do strony głównej
+        </a>
+      </div>
+    </div>
+  );
+
+  const renderError = () => (
+    <div className="flex min-h-[80vh] items-center justify-center p-4">
+      <div className="w-full max-w-md border border-gray-200 bg-white p-8 text-center shadow-lg">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center text-red-600">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-8 w-8"
+            viewBox="0 0 24 24"
+          >
+            <g
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="m15 9l-6 6m0-6l6 6" />
+            </g>
+          </svg>
+        </div>
+        <h2 className="mb-4 text-2xl font-bold text-gray-900">
+          Wystąpił błąd płatności
+        </h2>
+        <p className="mb-6 text-gray-600">
+          Przepraszamy, ale wystąpił problem z płatnością. Prosimy spróbować
+          ponownie lub skontaktować się z obsługą klienta.
+        </p>
+        {errorDetails && (
+          <div className="mb-6 rounded-lg bg-gray-50 p-4 text-left">
+            <p className="mb-2 text-sm text-gray-600">
+              ID transakcji: {errorDetails.transactionId}
+            </p>
+            <p className="text-sm text-gray-600">
+              Kod błędu: {errorDetails.errorCode}
+            </p>
           </div>
+        )}
+        <div className="space-y-3">
+          <a
+            href="/"
+            className="inline-block w-full bg-gray-900 px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800"
+          >
+            Spróbuj ponownie
+          </a>
+          <a
+            href="mailto:boscoclinic@gmail.com"
+            className="inline-block w-full rounded border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Kontakt z obsługą
+          </a>
         </div>
       </div>
     </div>
@@ -625,8 +711,10 @@ const FormContainer = () => {
           <h3 className="pb-4 text-center text-lg font-semibold">
             Metoda płatności
           </h3>
-          <PaymentOption method="blik" label="Blik" imageSrc="blik.svg" />
-          <PaymentOption method="tpay" label="Tpay" imageSrc="tpay_logo.svg" />
+          <PaymentMethods
+            onSelect={handlePaymentMethodSelect}
+            selectedMethod={paymentMethod}
+          />
           {errors.payment && (
             <p className="mt-1 text-xs text-red-500">{errors.payment}</p>
           )}
@@ -730,14 +818,30 @@ const FormContainer = () => {
         <p className="mt-2 text-sm text-red-500">{errors.finalization}</p>
       )}
       {transactionId && (
-        <button
-          onClick={handleFinalizeTransaction}
-          className="mt-6 flex w-full items-center justify-center gap-2 bg-green-800 px-7 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-          disabled={isSubmiting}
-        >
-          {isSubmiting && <div className="loader"></div>}
-          {isSubmiting ? "Przetwarzanie..." : "Finalizuj transakcję"}
-        </button>
+        <>
+          <button
+            onClick={handleFinalizeTransaction}
+            className="mt-6 flex w-full items-center justify-center gap-2 bg-green-800 px-7 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+            disabled={isSubmiting}
+          >
+            {isSubmiting && <div className="loader"></div>}
+            {isSubmiting ? "Przetwarzanie..." : "Sfinalizuj transakcję"}
+          </button>
+          <div className="pt-8">
+            <img
+              src="https://tpay.com/img/banners/tpay-820x45.svg"
+              className="hidden w-full border-0 sm:block"
+              alt="Logo Tpay"
+              title="Logo Tpay"
+            />
+            <img
+              src="https://tpay.com/img/banners/tpay-full-300x69.svg"
+              className="block w-full border-0 sm:hidden"
+              alt="Logo Tpay"
+              title="Logo Tpay"
+            />
+          </div>
+        </>
       )}
     </div>
   );
@@ -842,25 +946,6 @@ const FormContainer = () => {
     return renderFirstStep();
   };
 
-  const renderPaymentScreen = () => (
-    <div className="flex h-screen items-center justify-center">
-      <div className="max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-lg">
-        <h2 className="mb-6 text-2xl font-bold text-gray-800">
-          STRONA Z PŁATNOŚCIĄ
-        </h2>
-        <div className="mb-4 h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
-        <div className="mb-4 h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
-        <div className="h-12 w-full animate-pulse rounded-md bg-gray-200"></div>
-        <button
-          onClick={() => setShowThankYou(true)}
-          className="mt-4 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800"
-        >
-          Powrót
-        </button>
-      </div>
-    </div>
-  );
-
   const handleFinalizeTransaction = async () => {
     if (!transactionId) return;
 
@@ -881,10 +966,9 @@ const FormContainer = () => {
       };
 
       if (pageType === "voucher") {
-        // Convert currency string "216,00 zł" to number 216.00
         const numericValue = voucherValue
-          .replace(/[^\d,]/g, "") // Remove all non-digit characters except comma
-          .replace(",", "."); // Replace comma with decimal point
+          .replace(/[^\d,]/g, "")
+          .replace(",", ".");
         finalizationData.voucherValue = parseFloat(numericValue);
       } else if (selectedTemplate) {
         finalizationData.passId = selectedTemplate.id;
@@ -904,7 +988,6 @@ const FormContainer = () => {
       if (response.ok) {
         const { url } = await response.json();
         window.location.href = url;
-        // setShowPaymentScreen(true);
       } else {
         const errorData = await response.json();
         setIsSubmiting(false);
@@ -927,15 +1010,9 @@ const FormContainer = () => {
   return (
     <section className="pb-8 pt-6 sm:pt-9">
       <div className="mx-auto max-w-6xl px-4">
-        {showThankYou ? (
-          <ThankYouPage
-            formData={formData}
-            selectedTemplate={selectedTemplate}
-            voucherValue={voucherValue}
-          />
-        ) : showPaymentScreen ? (
-          renderPaymentScreen()
-        ) : (
+        {currentView === "success" && renderSuccess()}
+        {currentView === "error" && renderError()}
+        {currentView === "form" && (
           <div>
             <nav aria-label="Proces" className="mb-8 hidden md:block">
               <ol

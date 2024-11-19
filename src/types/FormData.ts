@@ -1,4 +1,4 @@
-export interface FormData {
+export interface FormDataContainer {
   email: string;
   phone: string;
   name: string;
