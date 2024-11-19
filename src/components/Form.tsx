@@ -5,9 +5,10 @@ import { formValidationRules } from "../hooks/formValidationRules";
 import { validateField } from "../hooks/validateField";
 import { formatTemplateTitle } from "../hooks/formatTemplateTitle";
 import { renderTitle } from "../hooks/renderTitle";
-import { toast } from "sonner";
+// import { toast } from "sonner";
 import { ThankYouPage } from "./ThankYouPage";
 import { FinalizationData } from "../hooks/finalizationData";
+import { toast } from "sonner";
 
 const FormContainer = () => {
   const [formData, setFormData] = useState<FormData>({
@@ -64,9 +65,27 @@ const FormContainer = () => {
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
     >,
   ) => {
-    const { id, value } = e.target;
+    const { id, value, type } = e.target;
 
-    // Update form data
+    // For number inputs, sanitize the input
+    if (type === "number") {
+      const sanitizedValue = value.replace(/[^0-9.]/g, ""); // Remove all non-numeric characters except the decimal point
+      setFormData((prev) => ({
+        ...prev,
+        [id]: sanitizedValue,
+      }));
+
+      // Validate field on change
+      const error = validateField(id, sanitizedValue);
+      setErrors((prev) => ({
+        ...prev,
+        [id]: error || "",
+      }));
+
+      return; // Exit early as we've already handled the sanitization
+    }
+
+    // For other inputs, process normally
     setFormData((prev) => ({
       ...prev,
       [id]: value,
@@ -74,7 +93,6 @@ const FormContainer = () => {
 
     // Validate field on change
     const error = validateField(id, value);
-
     setErrors((prev) => ({
       ...prev,
       [id]: error || "",
@@ -136,13 +154,14 @@ const FormContainer = () => {
       const nipError = validateField("nip", formData.nip);
 
       if (!formData.companyName) {
-        newErrors.companyName = "Nazwa firmy jest wymagana";
+        newErrors.companyName =
+          "Jeśli potrzebujesz faktury VAT nazwa firmy jest wymagana";
       } else if (companyError) {
         newErrors.companyName = companyError;
       }
 
       if (!formData.nip) {
-        newErrors.nip = "NIP jest wymagany";
+        newErrors.nip = "Jeśli potrzebujesz faktury VAT NIP jest wymagany";
       } else if (nipError) {
         newErrors.nip = nipError;
       }
@@ -240,6 +259,16 @@ const FormContainer = () => {
           maxLength={formValidationRules.find((r) => r.field === id)?.maxLength}
           min={type === "number" && id === "voucherValue" ? 100 : undefined}
           max={type === "number" && id === "voucherValue" ? 5000 : undefined}
+          onInput={
+            type === "number" && id === "voucherValue"
+              ? (e) => {
+                  e.currentTarget.value = e.currentTarget.value.replace(
+                    /[^0-9.]/g,
+                    "",
+                  );
+                }
+              : undefined
+          }
         />
       )}
       {errors[id] && <p className="mt-1 text-xs text-red-500">{errors[id]}</p>}
@@ -259,7 +288,44 @@ const FormContainer = () => {
 
   const handleNextStep = () => {
     if (formStep === 1 && validateStep1()) {
-      setFormStep(2);
+      setIsSubmiting(true);
+      const transactionData = {
+        email: formData.email,
+        phone: formData.phone,
+        firstName: formData.name,
+        lastName: formData.surname,
+      };
+      fetch("https://boscopanel.nxtm.pl/api/storefront/transaction/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(transactionData),
+      })
+        .then((response) => {
+          if (response.ok) {
+            return response.json();
+          } else {
+            setIsSubmiting(false);
+            toast.error("Wystąpił błąd");
+            throw new Error("Wystąpił błąd");
+          }
+        })
+        .then((data) => {
+          console.log("Transaction created successfully:", data);
+          setTransactionId(data.id);
+          setIsSubmiting(false);
+          setFormStep(2);
+        })
+        .catch((error) => {
+          console.error("Error creating transaction:", error);
+          setIsSubmiting(false);
+          setErrors((prev) => ({
+            ...prev,
+            submission:
+              "Wystąpił błąd podczas tworzenia transakcji. Spróbuj ponownie.",
+          }));
+        });
     } else if (formStep === 2 && validateStep2()) {
       setFormStep(3);
     }
@@ -330,7 +396,7 @@ const FormContainer = () => {
               />
               <span
                 className={`flex h-4 w-4 items-center justify-center rounded-full border border-gray-600 ${
-                  paymentMethod === method ? "bg-gray-900" : ""
+                  paymentMethod === method ? "border-blue-600 bg-blue-600" : ""
                 }`}
               >
                 {paymentMethod === method && (
@@ -381,30 +447,14 @@ const FormContainer = () => {
               <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
                 {selectedTemplate.services.map((service, index) => (
                   <div key={index}>
-                    {service.service.name} ({service.units}x)
+                    {service.service.name}{" "}
+                    {service.variant ? `(${service.variant.name})` : ""} (
+                    {service.units}x)
                   </div>
                 ))}
               </dd>
-              <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
-                Warianty
-              </dt>
-              <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
-                {selectedTemplate.services.every(
-                  (service) => !service.variant,
-                ) ? (
-                  <div>Brak wariantu</div>
-                ) : (
-                  selectedTemplate.services.map((service, index) => (
-                    <div key={index}>
-                      {service.variant
-                        ? service.variant.name
-                        : "Brak wariantów"}
-                    </div>
-                  ))
-                )}
-              </dd>
             </div>
-            {selectedTemplate.availableOnline ? (
+            {!selectedTemplate.availableOnline ? (
               <div
                 className="my-4 rounded-lg bg-yellow-50 p-4 text-sm text-yellow-800"
                 role="alert"
@@ -446,7 +496,7 @@ const FormContainer = () => {
                 onChange={(e) => setIsGift(e.target.checked)}
                 className="h-4 w-4"
               />
-              <span className="text-sm">Czy to prezent?</span>
+              <span className="text-sm">Kupuję jako prezent 🎁</span>
             </label>
           </div>
           {isGift &&
@@ -484,12 +534,15 @@ const FormContainer = () => {
         </div>
         <button
           onClick={handleNextStep}
-          className="mt-6 w-full bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+          className="mt-6 flex w-full items-center justify-center gap-2 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
           disabled={
-            !selectedTemplate?.availableOnline || !selectedTemplate?.enabled
+            isSubmiting ||
+            !selectedTemplate?.availableOnline ||
+            !selectedTemplate?.enabled
           }
         >
-          Dalej
+          {isSubmiting ? <span className="loader"></span> : ""}
+          {isSubmiting ? "Przetwarzanie..." : "Dalej"}
         </button>
       </div>
     </div>
@@ -526,7 +579,7 @@ const FormContainer = () => {
                     className="mb-1.5 inline-block text-sm"
                     htmlFor="company-name"
                   >
-                    Nazwa firmy
+                    Nazwa firmy *
                   </label>
                   <input
                     className={`w-full border ${
@@ -545,7 +598,7 @@ const FormContainer = () => {
                 </div>
                 <div className="mb-4">
                   <label className="mb-1.5 inline-block text-sm" htmlFor="nip">
-                    NIP
+                    NIP *
                   </label>
                   <input
                     className={`w-full border ${
@@ -563,6 +616,7 @@ const FormContainer = () => {
               </div>
             )}
           </div>
+          <div className="pt-4 text-xs text-gray-500">* - dane wymagane</div>
         </div>
       </div>
 
@@ -623,23 +677,11 @@ const FormContainer = () => {
           <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
             {selectedTemplate.services.map((service, index) => (
               <div key={index}>
-                {service.service.name} ({service.units}x)
+                {service.service.name}{" "}
+                {service.variant ? `(${service.variant.name})` : ""} (
+                {service.units}x)
               </div>
             ))}
-          </dd>
-          <dt className="col-start-1 border-t border-zinc-950/5 pt-3 text-zinc-500 first:border-none sm:border-t sm:border-zinc-950/5 sm:py-3">
-            Warianty
-          </dt>
-          <dd className="sm:[&amp;:nth-child(2)]:border-none pb-3 pt-1 text-zinc-950 sm:border-t sm:border-zinc-950/5 sm:py-3">
-            {selectedTemplate.services.every((service) => !service.variant) ? (
-              <div>Brak wariantu</div>
-            ) : (
-              selectedTemplate.services.map((service, index) => (
-                <div key={index}>
-                  {service.variant ? service.variant.name : "Brak wariantów"}
-                </div>
-              ))
-            )}
           </dd>
         </div>
       )}
@@ -687,16 +729,7 @@ const FormContainer = () => {
       {errors.finalization && (
         <p className="mt-2 text-sm text-red-500">{errors.finalization}</p>
       )}
-      {!transactionId ? (
-        <button
-          onClick={handleSubmitForm}
-          className="mt-6 flex w-full items-center justify-center gap-2 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
-          disabled={isSubmiting}
-        >
-          {isSubmiting && <div className="loader"></div>}
-          {isSubmiting ? "Przetwarzanie..." : "Potwierdź i zapłać"}
-        </button>
-      ) : (
+      {transactionId && (
         <button
           onClick={handleFinalizeTransaction}
           className="mt-6 flex w-full items-center justify-center gap-2 bg-green-800 px-7 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
@@ -708,52 +741,6 @@ const FormContainer = () => {
       )}
     </div>
   );
-
-  const handleSubmitForm = async () => {
-    try {
-      setIsSubmiting(true);
-      const transactionData = {
-        email: formData.email,
-        phone: formData.phone,
-        firstName: formData.name,
-        lastName: formData.surname,
-      };
-
-      const response = await fetch(
-        "https://boscopanel.nxtm.pl/api/storefront/transaction/create",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(transactionData),
-        },
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setTransactionId(result.id);
-        console.log("Transaction created successfully:", result);
-        setIsSubmiting(false);
-        toast.success(
-          'Transakcja została utworzona pomyślnie. Kliknij "Finalizuj transakcję", aby kontynuować.',
-        );
-      } else {
-        setIsSubmiting(false);
-        setErrors((prev) => ({
-          ...prev,
-          captcha: "Weryfikacja nie powiodła się. Spróbuj ponownie.",
-        }));
-      }
-    } catch (error) {
-      console.error("Error verifying captcha:", error);
-      setIsSubmiting(false);
-      setErrors((prev) => ({
-        ...prev,
-        captcha: "Wystąpił błąd. Spróbuj ponownie później.",
-      }));
-    }
-  };
 
   const handleFirstStepContent = () => {
     if (pageType === "voucher") {
@@ -793,7 +780,7 @@ const FormContainer = () => {
                       onChange={(e) => setIsGift(e.target.checked)}
                       className="h-4 w-4"
                     />
-                    <span className="text-sm">Czy to prezent?</span>
+                    <span className="text-sm">Kupuję jako prezent 🎁</span>
                   </label>
                 </div>
                 {isGift &&
@@ -829,12 +816,23 @@ const FormContainer = () => {
                   )}
                 </div>
               </div>
+
+              <div className="py-1 text-xs text-gray-500">
+                * - dane wymagane
+              </div>
+
               <button
                 onClick={handleNextStep}
-                className="mt-6 w-full bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
-                disabled={!voucherValue || !formData.email || !acceptedTerms}
+                className="mt-6 flex w-full items-center justify-center gap-2 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+                disabled={
+                  isSubmiting ||
+                  !voucherValue ||
+                  !formData.email ||
+                  !acceptedTerms
+                }
               >
-                Dalej
+                {isSubmiting ? <span className="loader"></span> : ""}
+                {isSubmiting ? "Przetwarzanie..." : "Dalej"}
               </button>
             </div>
           </div>
