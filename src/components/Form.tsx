@@ -618,6 +618,8 @@ const FormContainer = () => {
             )}
           </div>
         </div>
+
+        <div className="pt-4 text-xs text-gray-500">* - dane wymagane</div>
         <button
           onClick={handleNextStep}
           className="mt-6 flex w-full items-center justify-center gap-2 bg-gray-900 px-7 py-3 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
